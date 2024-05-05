@@ -21,12 +21,13 @@ app.use(cookieParser());
 
 // MariaDB CONNECTION-----------------------------------------------------------
 
-pool.getConnection()
-  .then(conn => {
+pool
+  .getConnection()
+  .then((conn) => {
     console.log("Connected to MariaDB!");
     conn.release(); // Release the connection when done
   })
-  .catch(err => {
+  .catch((err) => {
     console.error("Error connecting to MariaDB:", err);
     throw err;
   });
@@ -39,337 +40,427 @@ app.use((err, req, res, next) => {
 
 //Some GLOBAL VARIABLES====================================================
 let pincode;
-(async () => {
-  try {
-    const result = await pool.query("SELECT pincode FROM location");
-    pincode = result;
-  } catch (err) {
-    console.error("Error fetching pincode:", err);
-    throw err;
-  }
-})();
-
 let hospital;
-(async () => {
-  try {
-    const result = await pool.query("SELECT H_name, H_address FROM hosp_data");
-    hospital = result;
-  } catch (err) {
-    console.error("Error fetching hospital data:", err);
-    throw err;
-  }
-})();
-
 let vaccine;
-(async () => {
+
+async function fetchPincode() {
+  const conn = await pool.getConnection();
   try {
-    const result = await pool.query("SELECT V_name from vaccine");
-    vaccine = result;
+    const rows = await conn.query("SELECT pincode FROM location");
+    return rows; // Return fetched pincode data
   } catch (err) {
-    console.error("Error fetching vaccine data:", err);
+    throw err;
+  } finally {
+    conn.release();
+  }
+}
+
+async function fetchHospital() {
+  const conn = await pool.getConnection();
+  try {
+    const rows = await conn.query("SELECT H_name, H_address FROM hosp_data");
+    return rows;
+  } catch (err) {
+    throw err;
+  } finally {
+    conn.release(); // release connection in the end
+  }
+}
+
+async function fetchVaccine() {
+  const conn = await pool.getConnection();
+  try {
+    const rows = await conn.query("SELECT V_name from vaccine");
+    return rows; // Assign fetched rows to vaccine variable
+  } catch (err) {
+    throw err;
+  } finally {
+    conn.release(); // release connection in the end
+  }
+}
+
+async function fetchData() {
+  try {
+    await fetchPincode();
+    await fetchHospital();
+    await fetchVaccine();
+  } catch (err) {
     throw err;
   }
-})();
-
+}
 /*****************************GET REQUESTS****************************/
 /*********************************************************************/
 
-// Add error handling to GET requests
+//
 
-let counts;
-let vaccines;
 app.get("/", async (req, res) => {
   try {
-    const sql =
+    let sql =
       "select ( select count(*) from vaccinates) as count_vacc, ( select count(*) from hosp_data) as count_hosp, ( select count(*) from inventory) as count_invent from dual;";
-    const sqla =
+    let sqla =
       "SELECT count(*) as count_,h.H_vac from vaccinates as v INNER JOIN hosp_data as h WHERE v.Hosp=h.H_id GROUP By h.H_vac";
-    const [resultCounts, resultVaccines] = await Promise.all([
-      pool.query(sql),
-      pool.query(sqla)
+    const conn = await pool.getConnection();
+    const [counts, vaccineResult] = await Promise.all([
+      conn.query(sql),
+      conn.query(sqla),
     ]);
-    counts = resultCounts[0];
-    vaccines = resultVaccines;
-    res.render("home", { count: counts, vaccine: vaccines });
+    conn.release();
+
+    res.render("home", { count: counts[0], vaccine: vaccineResult });
   } catch (err) {
-    console.error("Error fetching data for home page:", err);
-    res.status(500).send("Internal Server Error");
+    throw err;
   }
 });
 
-// Patient form get request
-app.get("/patient", (req, res) => {
-  try {
-    res.render("patient", { pincodes: pincode, hospital: hospital });
-  } catch (err) {
-    console.error("Error rendering patient form:", err);
-    res.status(500).send("Internal Server Error");
-  }
-});
 
-//Stat page get request
+
+// Stat page get request---------------------------------------------------
 app.get("/stat", async (req, res) => {
   try {
-    const sql =
-    "SELECT count(P_Gender) as count, ((count(P_Gender)*100)/(select count(*) from person)) as percentage, P_Gender FROM person GROUP By P_Gender";
-  const sqli =
-    "SELECT count(*) as count ,((count(H_type)*100)/(select count(*) from vacc_data)) as percentage,H_type FROM vacc_data GROUP By H_type;";
-  const sqla =
-    "SELECT count(*) as count ,((count(h_type)*100)/(select count(*) from hosp_data)) as percentage,H_type FROM hosp_data GROUP By h_type;";
-  const sqlii =
-    "select h_vac, count(*) as count, ((count(h_vac)*100)/(select count(*) from vacc_data)) as percentage from vacc_data group by h_vac;";
-  const sqlb =
-    "select (select count(*) from vaccinates where Date_first is not NULL and Date_second IS NULL) as onedose, (select count(*) from vaccinates where Date_first is not NULL and Date_second is not null) as twodose, (select count(*) from vaccinates where Date_first IS NULL and Date_second IS NULL) as nodose from dual;";
-  
-  const [resultGender, resultType, resultType2, resultVacc, resultDose] = await Promise.all([
-    pool.query(sql),
-    pool.query(sqli),
-    pool.query(sqla),
-    pool.query(sqlii),
-    pool.query(sqlb)
-  ]);
+    let sql =
+      "SELECT count(P_Gender) as count, ((count(P_Gender)*100)/(select count(*) from person)) as percentage, P_Gender FROM person GROUP By P_Gender";
+    let sqli =
+      "SELECT count(*) as count ,((count(H_type)*100)/(select count(*) from vacc_data)) as percentage,H_type FROM vacc_data GROUP By H_type;";
+    let sqla =
+      "SELECT count(*) as count ,((count(h_type)*100)/(select count(*) from hosp_data)) as percentage,H_type FROM hosp_data GROUP By h_type;";
+    let sqlii =
+      "select h_vac, count(*) as count, ((count(h_vac)*100)/(select count(*) from vacc_data)) as percentage from vacc_data group by h_vac;";
+    let sqlb =
+      "select (select count(*) from vaccinates where Date_first is not NULL and Date_second IS NULL) as onedose, (select count(*) from vaccinates where Date_first is not NULL and Date_second is not null) as twodose, (select count(*) from vaccinates where Date_first IS NULL and Date_second IS NULL) as nodose from dual;";
+    let type2, type, vacc, dose;
 
-  res.render("stat", {
-    gender: resultGender,
-    type: resultType,
-    type2: resultType2,
-    vacc: resultVacc,
-    dose: resultDose[0],
-  });
+    const conn = await pool.getConnection();
+    const [result1, result2, result3, result4, result5] = await Promise.all([
+      conn.query(sql),
+      conn.query(sqli),
+      conn.query(sqla),
+      conn.query(sqlii),
+      conn.query(sqlb),
+    ]);
+    conn.release();
+
+    type = result2;
+    type2 = result3;
+    vacc = result4;
+    dose = result5[0];
+
+    res.render("stat", {
+      gender: result1,
+      type: type,
+      type2: type2,
+      vacc: vacc,
+      dose: dose,
+    });
   } catch (err) {
-    console.error("Error fetching data for stat page:", err);
-    res.status(500).send("Internal Server Error");
+    throw err;
   }
 });
 
-// Choose hospital during patient registration
+// Patient form get request---------------------------------------------------
+app.get("/patient", async (req, res) => {
+  try {
+    const [pincodeResults, hospitalResults] = await Promise.all([
+      pool.query("SELECT pincode FROM location"),
+      pool.query("SELECT H_name, H_address FROM hosp_data"),
+    ]);
+
+    const pincode = pincodeResults;
+    const hospital = hospitalResults;
+
+    res.render("patient", { pincodes: pincode, hospital: hospital });
+  } catch (err) {
+    console.error(err);
+    res.status(500).send("Error retrieving data");
+  }
+});
+
+// Choose hospital during patient registration-----------------------------------------
 app.get("/choose_hosp/:pin/:pid", async (req, res) => {
   try {
-    const pri = await pool.query(
-      "select check_priority(P_DOB) as priority from person where P_id = ?;",
-      req.params.pid
-    );
+    const [priorityResult, hospitalResult] = await Promise.all([
+      pool.query("SELECT check_priority(P_DOB) AS priority FROM person WHERE P_id = ?", [req.params.pid]),
+      pool.query("SELECT * FROM hosp_data WHERE h_address = ?", [req.params.pin]),
+    ]);
 
-    const sql = "SELECT * FROM hosp_data where h_address = ?";
-    const result = await pool.query(sql, [req.params.pin]);
+    const pri = priorityResult[0].priority;
+    const hospital = hospitalResult;
 
     res.render("choose_hosp", {
-      hospital: result,
+      hospital: hospital,
       myid: req.params.pid,
-      pri: pri[0].priority,
+      pri: pri,
     });
   } catch (err) {
-    console.error("Error fetching hospital data for choose_hosp:", err);
-    res.status(500).send("Internal Server Error");
+    console.error(err);
+    res.status(500).send("Error retrieving data");
   }
 });
 
 
-//Hospital form get request---------------------------------------------------
+// Hospital form get request---------------------------------------------------
 app.get("/Registerhospital", async (req, res) => {
   try {
-    const result = await pool.query("SELECT V_name from vaccine");
+    const [pincodeResults, vaccineResult] = await Promise.all([
+      fetchPincode(), // Fetch pincode data
+
+      new Promise((resolve, reject) => {
+        pool.query("SELECT V_name from vaccine", (err, result) => {
+          if (err) reject(err);
+          resolve(result);
+        });
+      }),
+    ]);
+
     res.render("Registerhospital", {
-      pincodes: pincode,
+      pincodes: pincodeResults, // Pass fetched pincode data to the view
       message: "Enter details to Register",
       color: "success",
-      vaccines: result,
+      vaccines: vaccineResult,
     });
   } catch (err) {
-    console.error("Error fetching vaccine data for Registerhospital:", err);
-    res.status(500).send("Internal Server Error");
+    throw err;
   }
 });
 
-// Inventory form get request
-app.get("/Registerinventory", (req, res) => {
-  res.render("Registerinventory", { pincodes: pincode });
+// Inventory form get request---------------------------------------------------
+app.get("/Registerinventory", async (req, res) => {
+  try {
+    const pincodes = await fetchPincode(); // Fetch pincode data
+
+    console.log("Fetched pincode data (Inventory):"); // Log fetched pincode data
+
+    if (!pincodes || pincodes.length === 0) {
+      console.log("No pincodes available"); // Log if pincodes array is empty or undefined
+    }
+    res.render("Registerinventory", { pincodes: pincodes }); // Pass pincode data to template rendering
+  } catch (err) {
+    throw err;
+  }
 });
 
-// Inventory data from profile
+// Inventory data from profile-----------------------------------------------------
 app.get("/inventory_data", authController.isLoggedIn, async (req, res) => {
   try {
     if (req.user) {
-      const sql =
-        "select i.*, s.s_time,s.s_quantity,s_id from inventory i join supplies s on s_inventory = i.i_id join hosp_data h on h.h_id = s.s_hospital where h.h_id = ? order by s.s_time desc;";
-      const sql2 =
-        "select case when h.h_type = 'P' then v.v_cost*s.s_quantity when h.h_type = 'G' then 0 end as total_cost from hosp_data h join vaccine v on v.v_name = h.h_vac join supplies s on s.s_hospital = h.h_id where h.h_id = ? order by s.s_time desc;";
-      const sql3 = "select quant_rem from hospital where h_id = ?;";
+      const inventDetails = await new Promise((resolve, reject) => {
+        let sql =
+          "select i.*, s.s_time,s.s_quantity,s_id from inventory i join supplies s on s_inventory = i.i_id join hosp_data h on h.h_id = s.s_hospital where h.h_id = ? order by s.s_time desc;";
+        pool.query(sql, req.user.H_id, (err, result) => {
+          if (err) reject(err);
+          resolve(result);
+        });
+      });
 
-      const [resultInventory, resultCost, resultQuantRem] = await Promise.all([
-        pool.query(sql, req.user.H_id),
-        pool.query(sql2, req.user.H_id),
-        pool.query(sql3, req.user.H_id)
-      ]);
+      const costDetails = await new Promise((resolve, reject) => {
+        let sql2 =
+          "select case when h.h_type = 'P' then v.v_cost*s.s_quantity when h.h_type = 'G' then 0 end as total_cost from hosp_data h join vaccine v on v.v_name = h.h_vac join supplies s on s.s_hospital = h.h_id where h.h_id = ? order by s.s_time desc;";
+        pool.query(sql2, req.user.H_id, (err, result) => {
+          if (err) reject(err);
+          resolve(result);
+        });
+      });
+
+      const quantRem = await new Promise((resolve, reject) => {
+        let sql3 = "select quant_rem from hospital where h_id = ?;";
+        pool.query(sql3, req.user.H_id, (err, result) => {
+          if (err) reject(err);
+          resolve(result[0].quant_rem);
+        });
+      });
 
       res.render("inventory_data", {
-        inventory: resultInventory,
-        cost: resultCost,
+        inventory: inventDetails,
+        cost: costDetails,
         check: 0,
-        quant_rem: resultQuantRem[0].quant_rem,
+        quant_rem: quantRem,
       });
     } else {
-      res.render("hosp_login", {
-        message: "",
-      });
+      res.render("hosp_login", { message: "" });
     }
   } catch (err) {
-    console.error("Error fetching data for inventory_data:", err);
-    res.status(500).send("Internal Server Error");
+    throw err;
   }
 });
 
-// Hospital data page after login into profile if cookie exists
+// Login into profile if cookie exists---------------------------------------------------------
 app.get("/hospitaldata", authController.isLoggedIn, async (req, res) => {
-  console.log("inside");
-  console.log(req.user);
   try {
+    console.log("inside");
+    console.log(req.user);
     if (req.user) {
-      const sql1 =
-        "select count(*) as count from vaccinates where hosp = ? and date_first is not null;";
-      const resultCount = await pool.query(sql1, req.user.H_id);
-      const count = resultCount[0].count;
+      const countResult = await new Promise((resolve, reject) => {
+        let sql1 =
+          "select count(*) as count from vaccinates where hosp = ? and date_first is not null;";
+        pool.query(sql1, req.user.H_id, (err, result) => {
+          if (err) reject(err);
+          resolve(result[0].count);
+        });
+      });
 
-      const sql =
-        "select i.*, s.s_time,s.s_quantity from inventory i join supplies s on s_inventory = i.i_id join hosp_data h on h.h_id = s.s_hospital where h.h_id = ? order by s.s_time desc;";
-      const inventDetails = await pool.query(sql, req.user.H_id);
+      const inventDetails = await new Promise((resolve, reject) => {
+        let sql =
+          "select i.*, s.s_time,s.s_quantity from inventory i join supplies s on s_inventory = i.i_id join hosp_data h on h.h_id = s.s_hospital where h.h_id = ? order by s.s_time desc;";
+        pool.query(sql, req.user.H_id, (err, result) => {
+          if (err) reject(err);
+          resolve(result[0]);
+        });
+      });
 
-      const sql2 = "select * from inventory;";
-      const inv = await pool.query(sql2, req.user.H_id);
+      const invResult = await new Promise((resolve, reject) => {
+        let sql2 = "select * from inventory;";
+        pool.query(sql2, req.user.H_id, (err, result) => {
+          if (err) reject(err);
+          resolve(result);
+        });
+      });
+
+      const inv = invResult[0].inv;
 
       res.render("hospitaldata", {
         user: req.user,
-        invent_details: inventDetails[0],
-        count: count,
-        inv: inv,
+        invent_details: inventDetails,
+        count: countResult,
+        inv: invResult,
       });
     } else {
-      res.render("hosp_login", {
-        message: "",
-      });
+      res.render("hosp_login", { message: "" });
     }
   } catch (err) {
-    console.error("Error fetching data for hospitaldata:", err);
-    res.status(500).send("Internal Server Error");
+    throw err;
   }
 });
 
-// Handle logout request
+// LOGOUT request---------------------------------------------------
 app.get("/logout", authController.logout);
-
-// Handle hospital login page request
 app.get("/hosp_login", (req, res) => {
   res.render("hosp_login", { message: "" });
 });
 
-// Hospital patient data page request
+// Hospital patient data page request---------------------------------------------------
+
 app.get("/hosp_logindata", authController.isLoggedIn, async (req, res) => {
   try {
     if (req.user) {
-      const sql1 = "call filter_patients(4, ?);";
-      const result = await pool.query(sql1, req.user.H_id);
+      const result = await new Promise((resolve, reject) => {
+        let sql1 = "call filter_patients(4, ?);";
+        pool.query(sql1, req.user.H_id, (err, result) => {
+          if (err) reject(err);
+          resolve(result);
+        });
+      });
 
       res.render("hosp_logindata", {
         user: req.user,
-        patients: result[0],
+        patient_details: result,
+        message: "All records",
+        check: 0,
       });
     } else {
-      res.render("hosp_login", {
-        message: "",
-      });
+      res.render("hosp_login", { message: "" });
     }
   } catch (err) {
-    console.error("Error fetching data for hosp_logindata:", err);
-    res.status(500).send("Internal Server Error");
+    throw err;
   }
 });
 
-// Handle ONE DOSE in patient page in hospital profile request
+// ONE DOSE in patient page in hospital profile request---------------------------------------------------
 app.get("/onedose", authController.isLoggedIn, (req, res) => {
-  try {
-    if (req.user) {
-      let sql1 = "call filter_patients(1, ?);";
-      pool.query(sql1, req.user.H_id, function (err, result) {
-        if (err) throw err;
+  if (req.user) {
+    let sql1 = "call filter_patients(1, ?);";
+    pool.query(sql1, req.user.H_id, function (err, result) {
+      if (err) {
+        if (
+          err.code === "ER_WRONG_VALUE" &&
+          err.sqlMessage.includes("'0000-00-00'")
+        ) {
+          // Handle the case where the date value is '0000-00-00'
+          res.render("hosp_logindata", {
+            user: req.user,
+            patient_details: result,
+            message: "One dose administered",
+            check: 0,
+          });
+        } else {
+          throw err;
+        }
+      } else {
         res.render("hosp_logindata", {
           user: req.user,
           patient_details: result,
           message: "One dose administered",
           check: 0,
         });
-      });
-    } else {
-      res.render("hosp_login", {
-        message: "",
-      });
-    }
-  } catch (err) {
-    console.error("Error fetching ONE DOSE patient data:", err);
-    res.status(500).send("Internal Server Error");
+      }
+    });
+  } else {
+    res.render("hosp_login", {
+      message: "",
+    });
   }
 });
 
-// Handle No DOSE in patient page in hospital profile request
+// NO DOSE in patient page in hospital profile request---------------------------------------------------
 app.get("/nodose", authController.isLoggedIn, (req, res) => {
-  try {
-    if (req.user) {
-      let sql1 = "call filter_patients(3, ?);";
-      pool.query(sql1, req.user.H_id, function (err, result) {
-        if (err) throw err;
-        res.render("hosp_logindata", {
-          user: req.user,
-          patient_details: result,
-          message: "No dose administered",
-          check: 0,
-        });
+  if (req.user) {
+    let sql1 = "call filter_patients(3, ?);";
+    pool.query(sql1, req.user.H_id, function (err, result) {
+      if (err) throw err;
+      res.render("hosp_logindata", {
+        user: req.user,
+        patient_details: result,
+        message: "No dose administered",
+        check: 0,
       });
-    } else {
-      res.render("hosp_login", {
-        message: "",
-      });
-    }
-  } catch (err) {
-    console.error("Error fetching No DOSE patient data:", err);
-    res.status(500).send("Internal Server Error");
+    });
+  } else {
+    res.render("hosp_login", {
+      message: "",
+    });
   }
 });
 
-// Handle BOTH DOSE in patient page in hospital profile request
+// BOTH DOSE in patient page in hospital profile request---------------------------------------------------
 app.get("/bothdose", authController.isLoggedIn, (req, res) => {
-  try {
-    if (req.user) {
-      let sql1 = "call filter_patients(2, ?);";
-      pool.query(sql1, req.user.H_id, function (err, result) {
-        if (err) throw err;
+  if (req.user) {
+    let sql1 = "call filter_patients(2, ?);";
+    pool.query(sql1, req.user.H_id, function (err, result) {
+      if (err) {
+        if (err.code === "ER_WRONG_VALUE") {
+          console.error(
+            "Error: Incorrect DATE value. Handling the error gracefully."
+          );
+          res.render("hosp_logindata", {
+            user: req.user,
+            patient_details: [],
+            message: "Error: Incorrect DATE value. Please check the data.",
+            check: 0,
+          });
+        } else {
+          throw err;
+        }
+      } else {
         res.render("hosp_logindata", {
           user: req.user,
           patient_details: result,
           message: "Both dose administered",
           check: 0,
         });
-      });
-    } else {
-      res.render("hosp_login", {
-        message: "",
-      });
-    }
-  } catch (err) {
-    console.error("Error fetching BOTH DOSE patient data:", err);
-    res.status(500).send("Internal Server Error");
+      }
+    });
+  } else {
+    res.render("hosp_login", {
+      message: "",
+    });
   }
 });
 
 /************************POST REQUESTS*******************************/
 /********************************************************************/
 
-// Add error handling to POST requests
-
-
-//Deletes records from supplies table from inventory page
+// Deletes records from supplies table from inventory page
 app.post("/delete", authController.isLoggedIn, (req, res) => {
-  try {
   if (req.user) {
-    let sql = "delete FROM supplies where S_id = ? and S_hospital = ?";
+    let sql = "DELETE FROM supplies WHERE S_id = ? AND S_hospital = ?";
     pool.query(sql, [req.body.checkbox, req.user.H_id], (err, result) => {
       if (err) throw err;
       res.redirect("/inventory_data");
@@ -377,160 +468,129 @@ app.post("/delete", authController.isLoggedIn, (req, res) => {
   } else {
     res.redirect("/");
   }
-} catch (err) {
-  console.error("Error handling patient registration:", err);
-  res.status(500).send("Internal Server Error");
-}
 });
 
+
 // Patient registration post request
-app.post("/patient", (req, res) => {
-  try {
-    const val = [
-      req.body.inputName,
-      req.body.inputEmail,
-      req.body.inputPIN,
-      req.body.inputDOB,
-      req.body.contact,
-      req.body.optradio,
-    ];
+app.post("/patient", async (req, res) => {
+  console.log("Received patient registration request:", req.body); // Log request body
+  const { inputName, inputEmail, inputPIN, inputDOB, contact, optradio } = req.body;
+
+  const values = [inputName, inputEmail, inputPIN, inputDOB, contact, optradio];
+
+  const sql = "INSERT INTO person (p_name, p_email, p_address, p_dob, p_contactno, p_gender) VALUES (?, ?, ?, ?, ?, ?)";
   
-    let sql =
-      "INSERT INTO person (p_name,p_email,p_address,p_dob,p_contactno,p_gender) VALUES (?)";
-    pool.query(sql, [val], function (err, result) {
-      if (err) throw err;
-      console.log(result);
-      const pid = result.insertId;
-      console.log(
-        "Number of records inserted in patient: " + result.affectedRows
-      );
-      res.redirect("/choose_hosp/" + req.body.inputPIN + "/" + pid);
-    });
+  try {
+    const result = await pool.execute(sql, values);
+    const pid = result.insertId;
+    console.log("Patient registration successful:", result);
+    console.log("Number of records inserted in patient: " + result.affectedRows);
+
+    res.redirect("/choose_hosp/" + pid); // Redirect to choose hospital with patient ID
   } catch (err) {
-    console.error("Error handling patient registration:", err);
-    res.status(500).send("Internal Server Error");
+    console.error("Error inserting patient data:", err);
+    res.status(500).send("Error inserting patient data");
   }
 });
 
 // Choosing hospital during patient registration
-app.post("/choose_hosp/:id", (req, res) => {
+app.post("/choose_hosp/:id", async (req, res) => {
+  const hosp_name = req.body.inputHOSP;
+  const p_id = req.params.id;
+
   try {
-    const hosp_name = req.body.inputHOSP;
-    var sql2 = "SELECT * from hosp_data where H_name = (?)";
-    pool.query(sql2, [hosp_name], function (err, result) {
-      if (err) throw err;
-      if (result.length === 0) {
-        pool.query(
-          "delete from person where p_id not in (select p from vaccinates);",
-          function (err, result) {
-            if (err) throw err;
-            console.log("No of deleted data: " + result.affectedRows);
-          }
-        );
-      } else {
-        const hosp_id = result[0].H_id;
-        const p_id = req.params.id;
-        const values = [p_id, hosp_id];
-        pool.query(
-          "INSERT INTO vaccinates (P, Hosp) VALUES (?)",
-          [values],
-          function (err, result) {
-            if (err) throw err;
-            console.log(
-              "Number of records inserted in vaccinates: " + result.affectedRows
-            );
-            pool.query(
-              "delete from person where p_id not in (select p from vaccinates);",
-              function (err, result) {
-                if (err) throw err;
-                console.log("No of deleted data: " + result.affectedRows);
-              }
-            );
-          }
-        );
-      }
-  
-      return res.redirect("/");
-    });
+    const [result] = await pool.query("SELECT * FROM hosp_data WHERE H_name = ?", [hosp_name]);
+    
+    if (result.length === 0) {
+      await pool.query("DELETE FROM person WHERE p_id = ?", [p_id]);
+      console.log("Deleted patient data with ID: " + p_id);
+    } else {
+      const hosp_id = result[0].H_id;
+      const values = [p_id, hosp_id];
+
+      await pool.query("INSERT INTO vaccinates (P, Hosp) VALUES (?)", [values]);
+      console.log("Number of records inserted in vaccinates: " + result.affectedRows);
+
+      await pool.query("DELETE FROM person WHERE p_id = ?", [p_id]);
+      console.log("Deleted patient data with ID: " + p_id);
+    }
+
+    res.redirect("/"); // Redirect to homepage
   } catch (err) {
-    console.error("Error choosing hospital during patient registration:", err);
-    res.status(500).send("Internal Server Error");
+    console.error("Error during patient registration:", err);
+    res.status(500).send("Error during patient registration");
   }
 });
 
-// Hospital signup page post request
-app.post("/Registerhospital", (req, res) => {
-  try {
-    console.log(req.body);
 
-    const name = req.body.inputName;
-    const email = req.body.inputEmail;
-    const contact = req.body.inputContact;
-    const htype = req.body.inputhospitaltype;
-    const pwd = req.body.inputPassword;
-    const repwd = req.body.reinputPassword;
-    const pin = req.body.inputPIN;
-    const vacc = req.body.inputVACC;
-  
-    console.log(pin);
+// Hospital signup page post request------------------------------
+app.post("/Registerhospital", async (req, res) => {
+  console.log(req.body);
+
+  const name = req.body.inputName;
+  const email = req.body.inputEmail;
+  const contact = req.body.inputContact;
+  const htype = req.body.inputhospitaltype;
+  const pwd = req.body.inputPassword;
+  const repwd = req.body.reinputPassword;
+  const pin = req.body.inputPIN;
+  const vacc = req.body.inputVACC;
+
+  try {
+    const [pincodeResults, vaccineResult] = await Promise.all([
+      fetchPincode(), // Fetch pincode data
+      new Promise((resolve, reject) => {
+        pool.query("SELECT V_name from vaccine", (err, result) => {
+          if (err) reject(err);
+          resolve(result);
+        });
+      }),
+    ]);
+
+    if (pincodeResults.length === 0 || !pincodeResults) {
+      console.log("No pincodes available"); // Log if pincodes array is empty or undefined
+      // Handle this case gracefully, maybe redirect to an error page or render a different form
+    }
+
+    if (results.length > 0) {
+      return res.render("Registerhospital", {
+        pincodes: pincodeResults,
+        message:
+          "Please Note That: That email has already been registered! Kindly head over to the login page",
+        color: "danger",
+        vaccines: vaccineResult,
+      });
+    } else if (pwd !== repwd) {
+      return res.render("Registerhospital", {
+        pincodes: pincodeResults,
+        message: "Please Note That: Passwords do not match!",
+        color: "danger",
+        vaccines: vaccineResult,
+      });
+    }
+
+    let hashedPassword = await bcrypt.hash(pwd, 8);
+    console.log(hashedPassword);
+
     pool.query(
-      "SELECT h_email from hosp_data WHERE h_email = ?",
-      [email],
-      async (err, results) => {
-        if (err) {
-          throw err;
-        }
-        if (results.length > 0) {
-          return res.render("Registerhospital", {
-            pincodes: pincode,
-            message:
-              "Please Note That: That email has already been registered! Kindly headover to the login page",
-            color: "danger",
-            vaccines: vaccine,
-          });
-        } else if (pwd !== repwd) {
-          return res.render("Registerhospital", {
-            pincodes: pincode,
-            message: "Please Note That: Passwords do not match!",
-            color: "danger",
-            vaccines: vaccine,
-          });
-        }
-  
-        let hashedPassword = await bcrypt.hash(pwd, 8);
-        console.log(hashedPassword);
-  
-        pool.query(
-          "INSERT INTO hospital SET ?",
-          {
-            h_name: name,
-            h_email: email,
-            h_contactno: contact,
-            h_type: htype,
-            h_address: pin,
-            h_pwd: hashedPassword,
-            h_vac: vacc,
-            quant_rem: 0,
-          },
-          function (err, result) {
-            if (err) throw err;
-            console.log(
-              "Number of records inserted in hospital: " + result.affectedRows
-            );
-            return res.render("Registerhospital", {
-              pincodes: pincode,
-              message:
-                "Success! Your Hospital has been registered. Please login to continue.",
-              color: "success",
-              vaccines: vaccine,
-            });
-          }
+      "INSERT INTO hospital (h_name, h_email, h_contactno, h_type, h_address, h_pwd, h_vac, quant_rem) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+      [name, email, contact, htype, pin, hashedPassword, vacc, 0],
+      function (err, result) {
+        if (err) throw err;
+        console.log(
+          "Number of records inserted in hospital: " + result.affectedRows
         );
+        return res.render("Registerhospital", {
+          pincodes: pincodeResults,
+          message:
+            "Success! Your Hospital has been registered. Please login to continue.",
+          color: "success",
+          vaccines: vaccineResult,
+        });
       }
     );
   } catch (err) {
-    console.error("Error handling hospital signup:", err);
-    res.status(500).send("Internal Server Error");
+    throw err;
   }
 });
 
@@ -541,7 +601,7 @@ app.post("/hospital_login", async (req, res) => {
     const email = req.body.hospid;
     const pwd = req.body.hospwd;
     pool.query(
-      "SELECT * from hospital WHERE h_email = ?",
+      "SELECT * FROM hospital WHERE h_email = ?",
       [email],
       async (err, results) => {
         console.log("Results :", results);
@@ -550,12 +610,12 @@ app.post("/hospital_login", async (req, res) => {
           res.status(401).render("hosp_login", {
             message: "Error: Account not found.",
           });
-        } else if (!(await bcrypt.compare(pwd, results[0].H_pwd))) {
+        } else if (!(await bcrypt.compare(pwd, results[0].h_pwd))) {
           res.status(401).render("hosp_login", {
             message: "Error: Email or password does not match.",
           });
         } else {
-          const id = results[0].H_id;
+          const id = results[0].h_id;
           console.log("id :" + id);
           const token = jwt.sign({ id }, process.env.JWT_SECRET, {
             expiresIn: process.env.JWT_EXPIRES_IN,
@@ -580,171 +640,151 @@ app.post("/hospital_login", async (req, res) => {
   }
 });
 
-// Register inventory post request
+//Post request to register inventory-------------------------------------------
 app.post("/Registerinventory", (req, res) => {
-  try {
-    const val = [
-      req.body.inputName,
-      req.body.inputContact,
-      req.body.PINinventory,
-    ];
-    let sql = "INSERT INTO inventory (I_name,I_contactno,I_address) VALUES (?)";
-    pool.query(sql, [val], function (err, result) {
-      if (err) throw err;
-      console.log("Number of records inserted: " + result.affectedRows);
-      res.redirect("/");
-    });
-  } catch (err) {
-    console.error("Error handling inventory registration:", err);
-    res.status(500).send("Internal Server Error");
-  }
+  const val = [
+    req.body.inputName,
+    req.body.inputContact,
+    req.body.PINinventory,
+  ];
+  let sql =
+    "INSERT INTO inventory (I_name, I_contactno, I_address) VALUES (?, ?, ?)"; // Corrected SQL query
+  pool.query(sql, val, function (err, result) {
+    if (err) throw err;
+    console.log("Number of records inserted: " + result.affectedRows);
+    res.redirect("/");
+  });
 });
 
-// Inventory data post request
+// Post request from inventory page in hospital profile
 app.post("/inventory_data", authController.isLoggedIn, (req, res) => {
-  try {
-    if (req.user) {
-      const val = [req.user.H_id, req.body.id, req.body.quantity, req.body.date];
-  
-      let sqlcheck = "SELECT I_id from inventory where I_id=?";
-      pool.query(sqlcheck, [req.body.id], (err, result) => {
-        if (err) throw err;
-        if (result.length === 0) {
-          let sql =
-            "select i.*, s.s_time,s.s_quantity,s_id from inventory i join supplies s on s_inventory = i.i_id join hosp_data h on h.h_id = s.s_hospital where h.h_id = ? order by s.s_time desc;";
-          let sql2 =
-            "select case when h.h_type = 'P' then v.v_cost*s.s_quantity when h.h_type = 'G' then 0 end as total_cost from hosp_data h join vaccine v on v.v_name = h.h_vac join supplies s on s.s_hospital = h.h_id where h.h_id = ? order by s.s_time desc;";
-          let sql3 = "select quant_rem from hospital where h_id = ?;";
-          pool.query(sql, req.user.H_id, function (err, result) {
+  if (req.user) {
+    const val = [req.user.H_id, req.body.id, req.body.quantity, req.body.date];
+
+    let sqlcheck = "SELECT I_id from inventory where I_id=?";
+    pool.query(sqlcheck, [req.body.id], (err, result) => {
+      if (err) throw err;
+      if (result.length === 0) {
+        let sql =
+          "select i.*, s.s_time,s.s_quantity,s_id from inventory i join supplies s on s_inventory = i.i_id join hosp_data h on h.h_id = s.s_hospital where h.h_id = ? order by s.s_time desc;";
+        let sql2 =
+          "select case when h.h_type = 'P' then v.v_cost*s.s_quantity when h.h_type = 'G' then 0 end as total_cost from hosp_data h join vaccine v on v.v_name = h.h_vac join supplies s on s.s_hospital = h.h_id where h.h_id = ? order by s.s_time desc;";
+        let sql3 = "select quant_rem from hospital where h_id = ?;";
+        pool.query(sql, req.user.H_id, function (err, result) {
+          if (err) throw err;
+          const invent_details = result;
+          pool.query(sql2, req.user.H_id, function (err, result) {
             if (err) throw err;
-            const invent_details = result;
-            pool.query(sql2, req.user.H_id, function (err, result) {
+            const cost = result;
+            pool.query(sql3, req.user.H_id, function (err, result) {
               if (err) throw err;
-              const cost = result;
-              pool.query(sql3, req.user.H_id, function (err, result) {
-                if (err) throw error;
-                res.render("inventory_data", {
-                  inventory: invent_details,
-                  cost: cost,
-                  check: 1,
-                  quant_rem: result[0].quant_rem,
-                });
+              res.render("inventory_data", {
+                inventory: invent_details,
+                cost: cost,
+                check: 1,
+                quant_rem: result[0].quant_rem,
               });
             });
           });
-        } else {
-          let sql3 =
-            "INSERT INTO supplies (S_hospital,S_inventory,S_quantity,S_time) VALUES (?)";
-          pool.query(sql3, [val], function (err, result) {
-            if (err) throw err;
-            console.log(
-              "Number of records inserted in inventory: " + result.affectedRows
-            );
-            res.redirect("/inventory_data");
-          });
-        }
-      });
-    } else {
-      res.render("hosp_login", {
-        message: "",
-      });
-    }
-  } catch (err) {
-    console.error("Error handling inventory data:", err);
-    res.status(500).send("Internal Server Error");
+        });
+      } else {
+        let sql3 =
+          "INSERT INTO supplies (S_hospital,S_inventory,S_quantity,S_time) VALUES (?)";
+        pool.query(sql3, [val], function (err, result) {
+          if (err) throw err;
+          console.log(
+            "Number of records inserted in supplies: " + result.affectedRows
+          );
+          res.redirect("/inventory_data");
+        });
+      }
+    });
+  } else {
+    res.render("hosp_login", {
+      message: "",
+    });
   }
 });
 
-
-
-
-// Handle hospital patient data page request
+//Hospital after logging in can see this page for adding patient data
 app.post("/hosp_logindata", authController.isLoggedIn, (req, res) => {
-  try {
-    if (req.user) {
-      console.log(req.body);
-      const dose1 = req.body.dose1 || null;
-      const dose2 = req.body.dose2 || null;
-      const val = [dose1, dose2, req.user.H_id, req.body.id];
-      let sqlcheck = "SELECT quant_rem FROM Hospital WHERE H_id=?";
-      let flag;
-      pool.query(sqlcheck, [req.user.H_id], (err, result) => {
-        if (err) throw err;
-        const quantity = result[0].quant_rem;
-        if (dose1 !== "" && dose2 === "" && quantity >= 1) {
-          flag = 1;
-        } else if (dose1 !== "" && dose2 !== "" && quantity >= 1) {
-          flag = 1;
-        } else {
-          flag = 0;
-        }
-        console.log(flag);
-        if (flag === 1) {
-          let sql4 =
-            "Update vaccinates SET Date_first =?, Date_second =? where Hosp =? and P =?";
-          pool.query(sql4, val, function (err, result) {
-            if (err) {
-              console.error(err);
-              let sql1 = "call filter_patients(4,?);";
-              pool.query(sql1, req.user.H_id, function (err, result) {
-                if (err) throw err;
-                res.render("hosp_logindata", {
-                  user: req.user,
-                  patient_details: result,
-                  message: "All records",
-                  check: 1,
-                });
+  if (req.user) {
+    console.log(req.body);
+    const dose1 = req.body.dose1 || null;
+    const dose2 = req.body.dose2 || null;
+    const val = [dose1, dose2, req.user.H_id, req.body.id];
+    let sqlcheck = "SELECT quant_rem FROM hospital WHERE h_id=?";
+    let flag;
+    pool.query(sqlcheck, [req.user.H_id], (err, result) => {
+      if (err) throw err;
+      const quantity = result[0].quant_rem;
+      if (dose1 !== "" && dose2 === "" && quantity >= 1) {
+        flag = 1;
+      } else if (dose1 !== "" && dose2 !== "" && quantity >= 1) {
+        flag = 1;
+      } else {
+        flag = 0;
+      }
+      console.log(flag);
+      if (flag === 1) {
+        let sql4 =
+          "UPDATE vaccinates SET Date_first = ?, Date_second = ? WHERE Hosp = ? AND P = ?";
+        pool.query(sql4, val, function (err, result) {
+          if (err) {
+            console.error(err);
+            let sql1 = "CALL filter_patients(4, ?);";
+            pool.query(sql1, req.user.H_id, function (err, result) {
+              if (err) throw err;
+              res.render("hosp_logindata", {
+                user: req.user,
+                patient_details: result,
+                message: "All records",
+                check: 1,
               });
-              return;
-            }
-            console.log("Number of records updated: " + result.affectedRows);
-            if (result.affectedRows === 0) {
-              let sql1 =
-                "select * from person p join vaccinates v on v.P = p.p_id join hosp_data h on v.hosp = h.h_id where h.h_id =?;";
-              pool.query(sql1, req.user.H_id, function (err, result) {
-                if (err) throw err;
-                res.render("hosp_logindata", {
-                  user: req.user,
-                  patient_details: result,
-                  message: "All records",
-                  check: 1,
-                });
-              });
-            } else {
-              res.redirect("/hosp_logindata");
-            }
-          });
-        } else {
-          let sql1 =
-            "select * from person p join vaccinates v on v.P = p.p_id join hosp_data h on v.hosp = h.h_id where h.h_id =?;";
-          pool.query(sql1, req.user.H_id, function (err, result) {
-            if (err) throw err;
-            res.render("hosp_logindata", {
-              user: req.user,
-              patient_details: result,
-              message: "All records",
-              check: 1,
             });
+            return;
+          }
+          console.log("Number of records updated: " + result.affectedRows);
+          if (result.affectedRows === 0) {
+            let sql1 =
+              "SELECT * FROM person p JOIN vaccinates v ON v.P = p.p_id JOIN hosp_data h ON v.hosp = h.h_id WHERE h.h_id = ?";
+            pool.query(sql1, req.user.H_id, function (err, result) {
+              if (err) throw err;
+              res.render("hosp_logindata", {
+                user: req.user,
+                patient_details: result,
+                message: "All records",
+                check: 1,
+              });
+            });
+          } else {
+            res.redirect("/hosp_logindata");
+          }
+        });
+      } else {
+        let sql1 =
+          "SELECT * FROM person p JOIN vaccinates v ON v.P = p.p_id JOIN hosp_data h ON v.hosp = h.h_id WHERE h.h_id = ?";
+        pool.query(sql1, req.user.H_id, function (err, result) {
+          if (err) throw err;
+          res.render("hosp_logindata", {
+            user: req.user,
+            patient_details: result,
+            message: "All records",
+            check: 1,
           });
-        }
-      });
-    } else {
-      res.render("hosp_login", {
-        message: "",
-      });
-    }
-  } catch (err) {
-    console.error("Error handling hospital patient data:", err);
-    res.status(500).send("Internal Server Error");
+        });
+      }
+    });
+  } else {
+    res.render("hosp_login", {
+      message: "",
+    });
   }
 });
-
-
-
 
 /***************************LISTEN PORT******************************/
 /********************************************************************/
 
 app.listen(3001, function () {
   console.log("Server is running on port http://localhost:3001");
-})
+});

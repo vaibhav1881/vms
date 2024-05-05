@@ -27,10 +27,15 @@
   <div class="form-group col-md-6">
     <label for="PINinventory"><img src="images/pin.png" width="4%">&nbsp;PIN Code</label>
     <select id="PINinventory" name="PINinventory" class="form-control">
-      <% for(var i =0;i<pincodes.length;i++){ %>
-      <option class="form-group"><%= pincodes[i].pincode %></option>
-    <% } %>
+      <% if (pincodes && pincodes.length) { %>
+        <% for(var i = 0; i < pincodes.length; i++) { %>
+          <option class="form-group"><%= pincodes[i].pincode %></option>
+        <% } %>
+      <% } else { %>
+        <option class="form-group">No pincodes available</option>
+      <% } %>
     </select>
+    
   </div>
   </div><br>
 
