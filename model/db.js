@@ -4,10 +4,10 @@ dotenv.config({ path: "./.env" });
 const mariadb = require("mariadb");
 
 const pool = mariadb.createPool({
-  host: "127.0.0.1",
-  port: "3308",
+  host: "localhost",
+  port: "3305",
   user: "root",
-  password: "mariadb",
+  password: "root",
   database: "vms",
 });
 
