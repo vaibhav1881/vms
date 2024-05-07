@@ -472,6 +472,7 @@ app.post("/delete", authController.isLoggedIn, (req, res) => {
 
 
 // Patient registration post request
+// Patient registration post request
 app.post("/patient", async (req, res) => {
   console.log("Received patient registration request:", req.body); // Log request body
   const { inputName, inputEmail, inputPIN, inputDOB, contact, optradio } = req.body;
@@ -486,41 +487,57 @@ app.post("/patient", async (req, res) => {
     console.log("Patient registration successful:", result);
     console.log("Number of records inserted in patient: " + result.affectedRows);
 
-    res.redirect("/choose_hosp/" + pid); // Redirect to choose hospital with patient ID
+    // Redirect to the choose_hosp route with patient ID
+    res.redirect(`/choose_hosp/${inputPIN}/${pid}`);
   } catch (err) {
     console.error("Error inserting patient data:", err);
     res.status(500).send("Error inserting patient data");
   }
 });
 
+
 // Choosing hospital during patient registration
-app.post("/choose_hosp/:id", async (req, res) => {
-  const hosp_name = req.body.inputHOSP;
-  const p_id = req.params.id;
+// Choosing hospital during patient registration
+// Choosing hospital during patient registration
+// Choosing hospital during patient registration
+  app.post("/choose_hosp/:id", async (req, res) => {
+    const hosp_name = req.body.inputHOSP;
+    const p_id = req.params.id;
 
-  try {
-    const [result] = await pool.query("SELECT * FROM hosp_data WHERE H_name = ?", [hosp_name]);
-    
-    if (result.length === 0) {
-      await pool.query("DELETE FROM person WHERE p_id = ?", [p_id]);
-      console.log("Deleted patient data with ID: " + p_id);
-    } else {
-      const hosp_id = result[0].H_id;
-      const values = [p_id, hosp_id];
+    try {
+      const [result] = await pool.query("SELECT * FROM hosp_data WHERE H_name = ?", [hosp_name]);
+      
+      if (result.length === 0) {
+        await pool.query("DELETE FROM person WHERE p_id = ?", [p_id]);
+        console.log("Deleted patient data with ID: " + p_id);
+        res.status(400).send("Hospital not found");
+      } else {
+        const hosp_id = result[0]?.H_id; // Add the check here
+        if (hosp_id) {
+          const values = [p_id, hosp_id];
 
-      await pool.query("INSERT INTO vaccinates (P, Hosp) VALUES (?)", [values]);
-      console.log("Number of records inserted in vaccinates: " + result.affectedRows);
+          const insertResult = await pool.query("INSERT INTO vaccinates (P, Hosp) VALUES (?)", [values]);
+          console.log("Number of records inserted in vaccinates: " + insertResult.affectedRows);
 
-      await pool.query("DELETE FROM person WHERE p_id = ?", [p_id]);
-      console.log("Deleted patient data with ID: " + p_id);
+          await pool.query("DELETE FROM person WHERE p_id = ?", [p_id]);
+          console.log("Deleted patient data with ID: " + p_id);
+          
+          res.redirect("/"); // Redirect to homepage
+        } else {
+          console.error("Error: H_id is undefined");
+          res.status(500).send("Error: H_id is undefined");
+        }
+      }
+    } catch (err) {
+      console.error("Error during patient registration:", err);
+      res.status(500).send("Error during patient registration");
     }
+  });
 
-    res.redirect("/"); // Redirect to homepage
-  } catch (err) {
-    console.error("Error during patient registration:", err);
-    res.status(500).send("Error during patient registration");
-  }
-});
+
+
+
+
 
 
 // Hospital signup page post request------------------------------
