@@ -211,11 +211,11 @@ app.get("/Registerhospital", async (req, res) => {
       }),
     ]);
 
-    res.render("Registerhospital", {
+      res.render("Registerhospital", {
       pincodes: pincodeResults, // Pass fetched pincode data to the view
       message: "Enter details to Register",
       color: "success",
-      vaccines: vaccineResult,
+      vaccines: vaccineResult
     });
   } catch (err) {
     throw err;
